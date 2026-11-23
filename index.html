@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Shopify Product CSV Checker — find import errors before you upload</title>
+<meta name="description" content="Free, private Shopify product CSV checker. Finds the exact row and column of import errors: invalid handles, duplicate variants, empty prices, Excel-broken SKUs, wrong encoding. Runs in your browser, nothing is uploaded.">
+<link rel="canonical" href="https://ceoyur.github.io/shopify-csv-checker/">
+<meta property="og:title" content="Free Shopify Product CSV Checker">
+<meta property="og:description" content="Find Shopify CSV import errors by row and column before you upload. Free, runs in your browser.">
+<meta property="og:type" content="website">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--muted:#5d6670;--line:#dde1e6;--accent:#1f6feb;--err:#c62828;--warn:#b26a00;--info:#2e6f40;--chip:#eef1f4;--cta:#ff90e8;--ctafg:#000}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--card:#1b1e22;--fg:#e8eaed;--muted:#9aa3ad;--line:#2c3138;--accent:#4c8dff;--err:#ff6b6b;--warn:#f0a63a;--info:#6fcf8a;--chip:#262a30}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px}
+header{padding:32px 0 8px}
+h1{font-size:30px;line-height:1.2;margin:0 0 8px}
+h2{font-size:22px;margin:32px 0 12px}
+h3{font-size:17px;margin:18px 0 6px}
+.sub{color:var(--muted);margin:0 0 20px;font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:32px 16px;text-align:center;cursor:pointer}
+.drop.over{border-color:var(--accent)}
+.drop strong{display:block;font-size:17px}
+.muted{color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:12px 0}
+.stat{background:var(--chip);border-radius:8px;padding:10px}
+.stat b{display:block;font-size:22px}
+.e{color:var(--err)}.w{color:var(--warn)}.i{color:var(--info)}
+details{border-top:1px solid var(--line);padding:8px 0}
+summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.badge{font-size:12px;border-radius:99px;padding:1px 8px;background:var(--chip);white-space:nowrap}
+.tbl{width:100%;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top;word-break:break-word}
+th{color:var(--muted);font-weight:500}
+.cta{background:var(--chip);border-radius:10px;padding:16px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.btn{display:inline-block;background:var(--cta);color:var(--ctafg);text-decoration:none;border-radius:8px;padding:10px 16px;font-weight:600;border:1px solid #000}
+.ok{padding:10px;border-radius:8px;background:var(--chip)}
+.hidden{display:none}
+ul.rules{padding-left:20px}ul.rules li{margin:4px 0}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:.92em}
+footer{color:var(--muted);font-size:13px;text-align:center;padding:24px 0 40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Free Shopify Product CSV Checker</h1>
+  <p class="sub">Find the exact row and column of every problem in your product CSV <b>before</b> Shopify rejects it — or worse, imports it wrong. Runs entirely in your browser: your file is never uploaded.</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a CSV file">
+      <strong>Drop your product CSV here or click to choose</strong>
+      <span class="muted">Current Shopify template and the older one (Handle, Variant SKU, Image Src…) are both supported</span>
+    </div>
+    <input type="file" id="file" accept=".csv,.txt,text/csv" class="hidden">
+  </div>
+  <div id="out"></div>
+
+  <div class="card cta">
+    <div><b>Want the problems fixed for you?</b><br><span class="muted">CSV Preflight (full version) auto-fixes prices, weights, handles, true/false values and scattered rows, downloads a clean file, and converts supplier spreadsheets into Shopify format with your markup. Offline, one-time purchase.</span></div>
+    <a class="btn" href="https://ceoyur.gumroad.com/l/csv-preflight?utm_source=github&utm_medium=lite&utm_campaign=csv_preflight" rel="noopener">Get the full version — $19</a>
+  </div>
+
+  <section>
+    <h2>Why Shopify CSV imports fail</h2>
+    <p>Shopify's product importer is strict, and its error messages often don't say which row is wrong. These are the problems this checker looks for:</p>
+    <h3>File problems</h3>
+    <ul class="rules">
+      <li><b>Wrong encoding.</b> Excel's "CSV" (not "CSV UTF-8") saves accents and symbols in Windows-1252; they import as garbled text like <code>Ã©</code> or <code>â€™</code>.</li>
+      <li><b>Semicolon or tab separators</b> from European Excel or supplier systems.</li>
+      <li><b>Unclosed quotes</b> that swallow the rest of the file into one cell, and rows with more cells than the header (data shifted into the wrong columns).</li>
+      <li><b>Duplicate or missing columns</b> — a "Title" column is always required, and a handle column is required for variants.</li>
+    </ul>
+    <h3>Product and variant problems</h3>
+    <ul class="rules">
+      <li><b>Invalid handles</b> with spaces, capitals or symbols (only letters, numbers and dashes are allowed).</li>
+      <li><b>Two different products sharing one handle</b> — Shopify merges them into one product.</li>
+      <li><b>Rows of one product scattered</b> through the file instead of next to each other.</li>
+      <li><b>Duplicate variants</b> (same Size/Color twice) and <b>missing option values</b> on variant rows.</li>
+      <li><b>SKUs and barcodes destroyed by Excel</b>, e.g. <code>8.90123E+11</code> — the original digits are gone.</li>
+    </ul>
+    <h3>Value problems</h3>
+    <ul class="rules">
+      <li><b>Prices</b> with <code>$</code>, <code>€</code>, thousands separators or decimal commas (<code>19,99</code>); empty prices that import as 0.00; compare-at price not above the price.</li>
+      <li><b>Weights</b> like <code>0.5 kg</code> in a column that expects whole grams.</li>
+      <li><b>Yes/No</b> instead of <code>true</code>/<code>false</code>; invalid <code>Status</code> (must be active, draft or archived).</li>
+      <li><b>Image URLs</b> without <code>https://</code>, with spaces, or pointing at <code>_small</code>/<code>_thumb</code> low-resolution files.</li>
+      <li><b>SEO fields</b> longer than Shopify shows (title 70, description 320 characters) and more than 250 tags.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>FAQ</h2>
+    <h3>Is my file uploaded anywhere?</h3>
+    <p>No. The check runs in JavaScript inside this page. You can switch off Wi-Fi after the page loads and it still works.</p>
+    <h3>Does it change my file?</h3>
+    <p>No. It only reads it and shows a report.</p>
+    <h3>What's the difference between this and the full version?</h3>
+    <p>This free checker shows every problem. The <a href="https://ceoyur.gumroad.com/l/csv-preflight?utm_source=github&utm_medium=lite&utm_campaign=csv_preflight" rel="noopener">full version</a> also fixes the routine ones automatically and gives you a clean file to download, converts supplier files (any column names) into Shopify CSV with variants, images and price markup, and runs offline as a downloaded file.</p>
+    <h3>Is this an official Shopify tool?</h3>
+    <p>No. It is an independent tool, not affiliated with or endorsed by Shopify Inc.</p>
+  </section>
+</main>
+
+<footer>CSV Preflight Lite v<span id="ver"></span> · free · runs in your browser · Not affiliated with Shopify Inc. "Shopify" is a trademark of Shopify Inc.</footer>
+</div>
+
+<script>
+/*
+ * CSV Preflight core — Shopify product CSV checker, auto-fixer and supplier-file converter.
+ * Pure JavaScript, no dependencies. Runs in any modern browser and in Node.js (for tests).
+ * Never modifies input files: it only reads text and returns new data.
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.CSVPreflight = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const VERSION = '1.0.0';
+  const MAX_STORED_PER_RULE = 500;
+
+  // ---------------------------------------------------------------- decoding
+  function decodeBytes(input) {
+    let bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+    if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe)
+      return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'utf-16le', bom: true };
+    if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff)
+      return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'utf-16be', bom: true };
+    let bom = false;
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+      bom = true;
+      bytes = bytes.subarray(3);
+    }
+    try {
+      return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'utf-8', bom };
+    } catch (e) {
+      return { text: new TextDecoder('windows-1252').decode(bytes), encoding: 'windows-1252', bom };
+    }
+  }
+
+  // ---------------------------------------------------------------- CSV
+  function detectDelimiter(text) {
+    const candidates = [',', ';', '\t', '|'];
+    let line = '';
+    let inQ = false;
+    for (let i = 0; i < text.length && i < 100000; i++) {
+      const c = text[i];
+      if (c === '"') inQ = !inQ;
+      if (!inQ && (c === '\n' || c === '\r')) break;
+      line += inQ ? '' : c;
+    }
+    let best = ',', bestN = 0;
+    for (const d of candidates) {
+      const n = line.split(d).length - 1;
+      if (n > bestN) { best = d; bestN = n; }
+    }
+    return best;
+  }
+
+  function parseCSV(text, delim) {
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    delim = delim || detectDelimiter(text);
+    const rows = [];
+    let row = [], field = '', inQ = false, i = 0;
+    const n = text.length;
+    while (i < n) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          inQ = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"' && field === '') { inQ = true; i++; continue; }
+      if (c === delim) { row.push(field); field = ''; i++; continue; }
+      if (c === '\r' || c === '\n') {
+        row.push(field); rows.push(row); row = []; field = '';
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        i++; continue;
+      }
+      field += c; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return { rows, delimiter: delim, unterminatedQuote: inQ };
+  }
+
+  function csvCell(v) {
+    v = v == null ? '' : String(v);
+    if (/[",\r\n]/.test(v) || /^\s|\s$/.test(v)) return '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  }
+  function serializeCSV(rows) {
+    return rows.map(r => r.map(csvCell).join(',')).join('\n') + '\n';
+  }
+
+  // ---------------------------------------------------------------- helpers
+  const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  function slugify(s) {
+    return String(s || '')
+      .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 255);
+  }
+  const HANDLE_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+  const PLAIN_NUM = /^-?\d+(\.\d+)?$/;
+  function parseMoney(raw) {
+    const s0 = String(raw).trim();
+    if (s0 === '') return { ok: true, empty: true };
+    if (PLAIN_NUM.test(s0)) return { ok: true, value: Number(s0) };
+    let s = s0.replace(/[\s ]/g, '').replace(/^(usd|eur|gbp|cad|aud|kzt)|(usd|eur|gbp|cad|aud|kzt)$/i, '');
+    s = s.replace(/[$€£¥₸]/g, '');
+    if (!/^-?[\d.,]+$/.test(s)) return { ok: false };
+    const lastC = s.lastIndexOf(','), lastD = s.lastIndexOf('.');
+    if (lastC >= 0 && lastD >= 0) {
+      if (lastC > lastD) s = s.replace(/\./g, '').replace(',', '.');
+      else s = s.replace(/,/g, '');
+    } else if (lastC >= 0) {
+      if (/^-?\d{1,3}(,\d{3})+$/.test(s)) s = s.replace(/,/g, '');
+      else if ((s.match(/,/g) || []).length === 1) s = s.replace(',', '.');
+      else return { ok: false };
+    } else if ((s.match(/\./g) || []).length > 1) {
+      if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+      else return { ok: false };
+    }
+    if (!PLAIN_NUM.test(s)) return { ok: false };
+    const value = Number(s);
+    return { ok: true, value, fixed: value.toFixed(2) };
+  }
+
+  const UNIT_TO_G = { g: 1, gr: 1, gram: 1, grams: 1, kg: 1000, kgs: 1000, lb: 453.59237, lbs: 453.59237, oz: 28.349523125 };
+  function parseWeightToGrams(raw, defaultUnit) {
+    const s = String(raw).trim().toLowerCase().replace(',', '.');
+    if (s === '') return { ok: true, empty: true };
+    const m = s.match(/^(-?\d+(?:\.\d+)?)\s*([a-z]*)$/);
+    if (!m) return { ok: false };
+    const unit = m[2] || defaultUnit || 'g';
+    if (!(unit in UNIT_TO_G)) return { ok: false };
+    const g = Math.round(Number(m[1]) * UNIT_TO_G[unit]);
+    if (g < 0) return { ok: false };
+    return { ok: true, value: g };
+  }
+
+  const SCI_RE = /^\d+(\.\d+)?e\+\d+$/i;
+  const MOJIBAKE_RE = /Ã[\u0080-¿]|â€|�/;
+
+  // ---------------------------------------------------------------- header map
+  const FIELDS = {
+    handle: ['url handle', 'handle'],
+    title: ['title'],
+    body: ['description', 'body (html)'],
+    vendor: ['vendor'],
+    type: ['type'],
+    tags: ['tags'],
+    published: ['published on online store', 'published'],
+    status: ['status'],
+    sku: ['sku', 'variant sku'],
+    barcode: ['barcodes', 'barcode', 'variant barcode'],
+    o1n: ['option1 name'], o1v: ['option1 value'],
+    o2n: ['option2 name'], o2v: ['option2 value'],
+    o3n: ['option3 name'], o3v: ['option3 value'],
+    price: ['price', 'variant price'],
+    compare: ['compare-at price', 'variant compare at price'],
+    cost: ['cost per item'],
+    tracker: ['inventory tracker', 'variant inventory tracker'],
+    qty: ['inventory quantity', 'variant inventory qty'],
+    policy: ['continue selling when out of stock', 'variant inventory policy'],
+    grams: ['weight value (grams)', 'variant grams'],
+    wunit: ['weight unit for display', 'variant weight unit'],
+    ship: ['requires shipping', 'variant requires shipping'],
+    taxable: ['charge tax', 'variant taxable'],
+    giftcard: ['gift card'],
+    img: ['product image url', 'image src'],
+    imgpos: ['image position'],
+    imgalt: ['image alt text'],
+    vimg: ['variant image url', 'variant image'],
+    seoTitle: ['seo title'],
+    seoDesc: ['seo description'],
+  };
+  const KNOWN_EXTRA = ['product category', 'collection', 'option1 linkedto', 'option2 linkedto', 'option3 linkedto',
+    'fulfillment service', 'variant fulfillment service', 'packed product length', 'packed product width',
+    'packed product height', 'packed product dimension unit', 'variant tax code', 'variant weight unit'];
+
+  function mapHeader(header) {
+    const idx = {};
+    const seen = {};
+    const dups = [];
+    const unknown = [];
+    header.forEach((h, i) => {
+      const k = norm(h);
+      if (k === '') return;
+      if (seen[k] !== undefined) { dups.push({ name: h, col: i }); return; }
+      seen[k] = i;
+    });
+    for (const f in FIELDS) {
+      for (const alias of FIELDS[f]) {
+        if (seen[alias] !== undefined) { idx[f] = seen[alias]; break; }
+      }
+    }
+    const allAliases = new Set([].concat(...Object.values(FIELDS), KNOWN_EXTRA));
+    header.forEach((h, i) => {
+      const k = norm(h);
+      if (k && !allAliases.has(k) && !/[(/]/.test(k) && !k.startsWith('google shopping') && !k.startsWith('variant ') && !k.startsWith('included'))
+        unknown.push({ name: h, col: i });
+    });
+    const format = seen['url handle'] !== undefined || seen['product image url'] !== undefined ? 'current'
+      : (seen['handle'] !== undefined || seen['variant sku'] !== undefined || seen['image src'] !== undefined ? 'legacy' : 'unknown');
+    return { idx, dups, unknown, format };
+  }
+
+  // ---------------------------------------------------------------- rules
+  const RULES = {
+    EMPTY_FILE: ['error', 'The file has no data rows'],
+    UNTERMINATED_QUOTE: ['error', 'A quoted cell is never closed — the rest of the file is read as one cell'],
+    NO_TITLE_COL: ['error', 'Missing "Title" column'],
+    NO_HANDLE_COL: ['error', 'Missing "URL handle" column — required when products have variants'],
+    DUP_HEADER: ['error', 'Duplicate column name — Shopify will only read one of them'],
+    UNKNOWN_COL: ['info', 'Column not recognised as a Shopify product column (kept unchanged)'],
+    ENCODING: ['warning', 'File was not saved as UTF-8 — converted to UTF-8 in the fixed file'],
+    MOJIBAKE: ['warning', 'Garbled characters (e.g. "Ã©", "â€™") — the file was saved with the wrong encoding earlier'],
+    DELIMITER: ['info', 'File uses a non-comma separator — fixed file uses commas'],
+    BLANK_ROW: ['info', 'Empty row removed'],
+    EXTRA_CELLS: ['error', 'Row has more cells than the header — data is shifted into the wrong columns'],
+    WHITESPACE: ['info', 'Leading/trailing spaces trimmed'],
+    HANDLE_MISSING: ['warning', 'Row has no handle — handle generated from Title'],
+    ORPHAN_ROW: ['error', 'Row has neither handle nor Title — Shopify cannot attach it to a product'],
+    HANDLE_INVALID: ['warning', 'Handle contains characters Shopify does not allow — converted to a valid handle'],
+    HANDLE_SPLIT: ['warning', 'Rows of the same product are not next to each other — regrouped in the fixed file'],
+    HANDLE_COLLISION: ['error', 'Two different product titles share one handle — they would be merged into one product'],
+    TITLE_MISSING: ['error', 'First row of a product has no Title'],
+    OPTION_NAME_MISSING: ['error', 'Option value given but the product has no matching option name'],
+    OPTION_VALUE_MISSING: ['error', 'Variant row is missing a value for an option the product defines'],
+    DUP_VARIANT: ['error', 'Duplicate variant (same option values twice) — Shopify rejects or overwrites it'],
+    PRICE_EMPTY: ['warning', 'Variant has no price — it will import as 0.00 (free)'],
+    PRICE_FORMAT: ['warning', 'Price has a currency symbol, thousands separator or comma decimal — normalised'],
+    PRICE_INVALID: ['error', 'Price is not a number'],
+    PRICE_NEGATIVE: ['error', 'Price is negative'],
+    COMPARE_LE_PRICE: ['warning', 'Compare-at price is not higher than price — no sale badge will show'],
+    COST_GT_PRICE: ['warning', 'Cost per item is higher than price — selling at a loss'],
+    QTY_INVALID: ['error', 'Inventory quantity is not a whole number'],
+    QTY_FORMAT: ['info', 'Inventory quantity normalised to a whole number'],
+    GRAMS_FORMAT: ['warning', 'Weight converted to whole grams'],
+    GRAMS_INVALID: ['error', 'Weight is not a number of grams'],
+    BOOL_FORMAT: ['warning', 'Yes/No value converted to true/false'],
+    BOOL_INVALID: ['error', 'Value must be true or false'],
+    STATUS_FORMAT: ['info', 'Status normalised to lowercase'],
+    STATUS_INVALID: ['error', 'Status must be active, draft or archived'],
+    STATUS_BLANK: ['error', 'Status column exists but this product has no status'],
+    POLICY_FORMAT: ['info', 'Inventory policy normalised'],
+    POLICY_INVALID: ['error', 'Out-of-stock policy must be deny or continue'],
+    WUNIT_INVALID: ['error', 'Weight unit must be g, kg, lb or oz'],
+    WUNIT_FORMAT: ['info', 'Weight unit normalised'],
+    IMG_URL_INVALID: ['error', 'Image URL must start with http:// or https://'],
+    IMG_URL_SPACE: ['warning', 'Image URL contains spaces — encoded as %20'],
+    IMG_SIZE_SUFFIX: ['warning', 'Image file name ends with _thumb/_small/_medium — Shopify may import a low-resolution image'],
+    IMG_POS_INVALID: ['error', 'Image position must be a whole number 1 or higher'],
+    SCI_NOTATION: ['error', 'SKU/barcode in scientific notation (e.g. 8.90123E+11) — Excel destroyed the original digits'],
+    SKU_DUP: ['warning', 'SKU used by more than one variant'],
+    TAGS_TOO_MANY: ['warning', 'More than 250 tags on one product'],
+    SEO_TITLE_LONG: ['warning', 'SEO title longer than 70 characters'],
+    SEO_DESC_LONG: ['warning', 'SEO description longer than 320 characters'],
+  };
+
+  function Reporter() {
+    const counts = {};
+    const issues = [];
+    return {
+      counts, issues,
+      add(rule, row, col, value, fix, extra) {
+        counts[rule] = (counts[rule] || 0) + 1;
+        if (counts[rule] > MAX_STORED_PER_RULE) return;
+        const [severity, message] = RULES[rule];
+        issues.push({ rule, severity, message: extra ? message + ' (' + extra + ')' : message, row, column: col, value: value == null ? '' : String(value), fixedTo: fix == null ? null : String(fix) });
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------- checker
+  /**
+   * Check a Shopify product CSV.
+   * @param {string} text decoded CSV text
+   * @param {object} [meta] { encoding }
+   * @returns {{format, delimiter, header, issues, counts, summary, fixedRows, fixedCsv}}
+   */
+  function checkShopifyCSV(text, meta) {
+    meta = meta || {};
+    const R = Reporter();
+    const parsed = parseCSV(text);
+    const result = { version: VERSION, delimiter: parsed.delimiter, encoding: meta.encoding || 'utf-8' };
+    if (meta.encoding && meta.encoding !== 'utf-8') R.add('ENCODING', null, null, meta.encoding, 'utf-8');
+    if (parsed.delimiter !== ',') R.add('DELIMITER', null, null, parsed.delimiter === '\t' ? 'TAB' : parsed.delimiter, ',');
+    if (parsed.unterminatedQuote) R.add('UNTERMINATED_QUOTE', parsed.rows.length, null, null, null);
+
+    const allRows = parsed.rows;
+    if (!allRows.length || allRows.every(r => r.every(c => c.trim() === ''))) {
+      R.add('EMPTY_FILE', null, null, null, null);
+      return finish(result, R, [], [], 'unknown');
+    }
+    const header = allRows[0].map(h => h.trim());
+    const H = mapHeader(header);
+    const ix = H.idx;
+    const colName = i => header[i];
+    H.dups.forEach(d => R.add('DUP_HEADER', 1, d.name, d.name, null));
+    H.unknown.forEach(u => R.add('UNKNOWN_COL', 1, u.name, u.name, null));
+    if (ix.title === undefined) R.add('NO_TITLE_COL', 1, null, null, null);
+    const hasOptionCols = ix.o1v !== undefined || ix.o2v !== undefined || ix.o3v !== undefined;
+
+    // 1) row-level cleanup: blank rows, ragged rows, whitespace, mojibake
+    const recs = [];
+    for (let r = 1; r < allRows.length; r++) {
+      const excelRow = r + 1;
+      let cells = allRows[r];
+      if (cells.every(c => c.trim() === '')) { R.add('BLANK_ROW', excelRow, null, null, null); continue; }
+      if (cells.length > header.length) {
+        const extra = cells.slice(header.length);
+        if (extra.some(c => c.trim() !== '')) R.add('EXTRA_CELLS', excelRow, null, extra.join(' | ').slice(0, 80), null);
+        else cells = cells.slice(0, header.length);
+      }
+      cells = cells.slice();
+      while (cells.length < header.length) cells.push('');
+      for (let c = 0; c < cells.length; c++) {
+        const v = cells[c];
+        if (v !== v.trim() && c !== ix.body) {
+          cells[c] = v.trim();
+          R.add('WHITESPACE', excelRow, colName(c) || 'col ' + (c + 1), v, cells[c]);
+        }
+        if (MOJIBAKE_RE.test(v)) R.add('MOJIBAKE', excelRow, colName(c), v.slice(0, 60), null);
+      }
+      recs.push({ row: excelRow, cells });
+    }
+    if (!recs.length) { R.add('EMPTY_FILE', null, null, null, null); return finish(result, R, header, [], H.format); }
+
+    const get = (rec, f) => (ix[f] === undefined ? '' : rec.cells[ix[f]]);
+    const set = (rec, f, v) => { if (ix[f] !== undefined) rec.cells[ix[f]] = v; };
+    const fixCell = (rec, f, rule, newVal) => { R.add(rule, rec.row, colName(ix[f]), get(rec, f), newVal); set(rec, f, newVal); };
+
+    // 2) handles
+    if (ix.handle === undefined) {
+      if (hasOptionCols && recs.some(r => [ 'o1v', 'o2v', 'o3v' ].some(f => get(r, f) !== '' && norm(get(r, f)) !== 'default title')))
+        R.add('NO_HANDLE_COL', 1, null, null, null);
+      recs.forEach((rec, i) => { rec.key = '#' + i; if (ix.title !== undefined && get(rec, 'title') === '') R.add('TITLE_MISSING', rec.row, colName(ix.title), '', null); });
+    } else {
+      for (const rec of recs) {
+        let h = get(rec, 'handle');
+        if (h === '') {
+          const t = get(rec, 'title');
+          if (t === '') { R.add('ORPHAN_ROW', rec.row, colName(ix.handle), '', null); rec.key = null; continue; }
+          h = slugify(t);
+          fixCell(rec, 'handle', 'HANDLE_MISSING', h);
+        } else if (!HANDLE_RE.test(h)) {
+          const s = slugify(h);
+          if (s) { fixCell(rec, 'handle', 'HANDLE_INVALID', s); h = s; }
+        }
+        rec.key = h;
+      }
+    }
+
+    // 3) group by handle, detect split + collisions
+    const groups = new Map();
+    let prevKey = null;
+    const splitKeys = new Map();
+    for (const rec of recs) {
+      if (rec.key == null) { prevKey = null; continue; }
+      if (!groups.has(rec.key)) groups.set(rec.key, []);
+      else if (prevKey !== rec.key && !splitKeys.has(rec.key)) splitKeys.set(rec.key, rec.row);
+      groups.get(rec.key).push(rec);
+      prevKey = rec.key;
+    }
+    const collided = new Set();
+    for (const [key, rows] of groups) {
+      const titles = new Map();
+      for (const rec of rows) {
+        const t = norm(get(rec, 'title'));
+        if (t && !titles.has(t)) {
+          if (titles.size) { R.add('HANDLE_COLLISION', rec.row, colName(ix.handle), key, null, '"' + get(rec, 'title') + '" vs row ' + [...titles.values()][0]); collided.add(key); }
+          titles.set(t, rec.row);
+        }
+      }
+    }
+    for (const [key, row] of splitKeys) if (!collided.has(key)) R.add('HANDLE_SPLIT', row, colName(ix.handle), key, null);
+
+    // 4) per-product checks
+    const VARIANT_FIELDS = ['o1v', 'o2v', 'o3v', 'sku', 'price', 'compare', 'qty', 'grams', 'barcode'];
+    const skuSeen = new Map();
+    let productCount = 0, variantCount = 0, imageCount = 0;
+    for (const [key, rows] of groups) {
+      productCount++;
+      const first = rows[0];
+      if (ix.handle !== undefined && ix.title !== undefined && !rows.some(r => get(r, 'title') !== '')) R.add('TITLE_MISSING', first.row, colName(ix.title), '', null);
+      if (ix.status !== undefined) {
+        const st = rows.map(r => get(r, 'status')).find(v => v !== '');
+        if (st === undefined) R.add('STATUS_BLANK', first.row, colName(ix.status), '', null);
+      }
+      const optNames = [1, 2, 3].map(n => { const v = rows.map(r => get(r, 'o' + n + 'n')).find(x => x !== ''); return v || ''; });
+      const combos = new Map();
+      let tagSet = new Set();
+      rows.forEach((rec, i) => {
+        const isVariant = i === 0 || VARIANT_FIELDS.some(f => get(rec, f) !== '');
+        if (isVariant) {
+          variantCount++;
+          const vals = [1, 2, 3].map(n => get(rec, 'o' + n + 'v'));
+          [1, 2, 3].forEach(n => {
+            const v = vals[n - 1], name = optNames[n - 1];
+            if (v !== '' && name === '') R.add('OPTION_NAME_MISSING', rec.row, colName(ix['o' + n + 'v']), v, null, 'Option' + n);
+            if (v === '' && name !== '' && rows.length > 1) R.add('OPTION_VALUE_MISSING', rec.row, colName(ix['o' + n + 'v']) || 'Option' + n + ' value', '', null, name);
+          });
+          if (vals.some(v => v !== '')) {
+            const k = vals.map(v => norm(v)).join('\u0001');
+            if (combos.has(k)) R.add('DUP_VARIANT', rec.row, colName(ix.o1v), vals.filter(Boolean).join(' / '), null, 'same as row ' + combos.get(k));
+            else combos.set(k, rec.row);
+          }
+          if (ix.price !== undefined && get(rec, 'price') === '') R.add('PRICE_EMPTY', rec.row, colName(ix.price), '', null);
+          const sku = get(rec, 'sku');
+          if (sku) {
+            if (skuSeen.has(sku)) R.add('SKU_DUP', rec.row, colName(ix.sku), sku, null, 'first used on row ' + skuSeen.get(sku));
+            else skuSeen.set(sku, rec.row);
+          }
+        }
+        String(get(rec, 'tags')).split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t.toLowerCase()));
+        if (get(rec, 'img')) imageCount++;
+      });
+      if (tagSet.size > 250) R.add('TAGS_TOO_MANY', first.row, colName(ix.tags), tagSet.size, null);
+    }
+
+    // 5) cell-format checks (all rows)
+    for (const rec of recs) {
+      for (const f of ['price', 'compare', 'cost']) {
+        const v = get(rec, f);
+        if (v === '') continue;
+        const m = parseMoney(v);
+        if (!m.ok) R.add('PRICE_INVALID', rec.row, colName(ix[f]), v, null);
+        else if (m.value < 0) R.add('PRICE_NEGATIVE', rec.row, colName(ix[f]), v, null);
+        else if (m.fixed !== undefined) fixCell(rec, f, 'PRICE_FORMAT', m.fixed);
+      }
+      const p = parseMoney(get(rec, 'price')), cmp = parseMoney(get(rec, 'compare')), cost = parseMoney(get(rec, 'cost'));
+      if (p.ok && !p.empty && cmp.ok && !cmp.empty && cmp.value > 0 && cmp.value <= p.value) R.add('COMPARE_LE_PRICE', rec.row, colName(ix.compare), get(rec, 'compare'), null, 'price ' + get(rec, 'price'));
+      if (p.ok && !p.empty && cost.ok && !cost.empty && cost.value > p.value) R.add('COST_GT_PRICE', rec.row, colName(ix.cost), get(rec, 'cost'), null, 'price ' + get(rec, 'price'));
+
+      const q = get(rec, 'qty');
+      if (q !== '' && !/^-?\d+$/.test(q)) {
+        if (/^-?\d+\.0+$/.test(q)) fixCell(rec, 'qty', 'QTY_FORMAT', String(parseInt(q, 10)));
+        else R.add('QTY_INVALID', rec.row, colName(ix.qty), q, null);
+      }
+      const g = get(rec, 'grams');
+      if (g !== '' && !/^\d+$/.test(g)) {
+        const w = parseWeightToGrams(g, 'g');
+        if (w.ok) fixCell(rec, 'grams', 'GRAMS_FORMAT', String(w.value));
+        else R.add('GRAMS_INVALID', rec.row, colName(ix.grams), g, null);
+      }
+      for (const f of ['published', 'ship', 'taxable', 'giftcard']) {
+        const v = get(rec, f);
+        if (v === '') continue;
+        const l = v.toLowerCase();
+        if (l === 'true' || l === 'false') continue;
+        if (['yes', 'y', '1'].includes(l)) fixCell(rec, f, 'BOOL_FORMAT', 'true');
+        else if (['no', 'n', '0'].includes(l)) fixCell(rec, f, 'BOOL_FORMAT', 'false');
+        else R.add('BOOL_INVALID', rec.row, colName(ix[f]), v, null);
+      }
+      const st = get(rec, 'status');
+      if (st !== '' && !['active', 'draft', 'archived'].includes(st)) {
+        if (['active', 'draft', 'archived'].includes(st.toLowerCase())) fixCell(rec, 'status', 'STATUS_FORMAT', st.toLowerCase());
+        else R.add('STATUS_INVALID', rec.row, colName(ix.status), st, null);
+      }
+      const pol = get(rec, 'policy');
+      if (pol !== '' && !['deny', 'continue'].includes(pol)) {
+        if (['deny', 'continue'].includes(pol.toLowerCase())) fixCell(rec, 'policy', 'POLICY_FORMAT', pol.toLowerCase());
+        else R.add('POLICY_INVALID', rec.row, colName(ix.policy), pol, null);
+      }
+      const wu = get(rec, 'wunit');
+      if (wu !== '' && !['g', 'kg', 'lb', 'oz'].includes(wu)) {
+        const l = wu.toLowerCase().replace(/s$/, '');
+        const map = { g: 'g', gram: 'g', kg: 'kg', kilogram: 'kg', lb: 'lb', pound: 'lb', oz: 'oz', ounce: 'oz' };
+        if (map[l]) fixCell(rec, 'wunit', 'WUNIT_FORMAT', map[l]);
+        else R.add('WUNIT_INVALID', rec.row, colName(ix.wunit), wu, null);
+      }
+      for (const f of ['img', 'vimg']) {
+        let u = get(rec, f);
+        if (u === '') continue;
+        if (!/^https?:\/\/\S/i.test(u)) { R.add('IMG_URL_INVALID', rec.row, colName(ix[f]), u, null); continue; }
+        if (/\s/.test(u)) { const enc = u.replace(/\s/g, '%20'); fixCell(rec, f, 'IMG_URL_SPACE', enc); u = enc; }
+        if (/_(thumb|small|medium)\.[a-z0-9]+(\?|$)/i.test(u)) R.add('IMG_SIZE_SUFFIX', rec.row, colName(ix[f]), u, null);
+      }
+      const ip = get(rec, 'imgpos');
+      if (ip !== '' && !/^[1-9]\d*$/.test(ip)) R.add('IMG_POS_INVALID', rec.row, colName(ix.imgpos), ip, null);
+      for (const f of ['sku', 'barcode']) {
+        const v = get(rec, f);
+        if (v && v.split(/[;,]/).some(x => SCI_RE.test(x.trim()))) R.add('SCI_NOTATION', rec.row, colName(ix[f]), v, null);
+      }
+      if (get(rec, 'seoTitle').length > 70) R.add('SEO_TITLE_LONG', rec.row, colName(ix.seoTitle), get(rec, 'seoTitle').length + ' chars', null);
+      if (get(rec, 'seoDesc').length > 320) R.add('SEO_DESC_LONG', rec.row, colName(ix.seoDesc), get(rec, 'seoDesc').length + ' chars', null);
+    }
+
+    // 6) build fixed rows (regroup split products that are not collisions)
+    let ordered;
+    if (splitKeys.size) {
+      ordered = [];
+      const emitted = new Set();
+      for (const rec of recs) {
+        if (rec.key == null || collided.has(rec.key) || !splitKeys.has(rec.key)) { ordered.push(rec); continue; }
+        if (emitted.has(rec.key)) continue;
+        emitted.add(rec.key);
+        ordered.push(...groups.get(rec.key));
+      }
+    } else ordered = recs;
+
+    result.stats = { rows: recs.length, products: productCount, variants: variantCount, images: imageCount };
+    return finish(result, R, header, ordered.map(r => r.cells), H.format);
+  }
+
+  function finish(result, R, header, rows, format) {
+    result.format = format;
+    result.header = header;
+    result.issues = R.issues;
+    result.counts = R.counts;
+    const summary = { error: 0, warning: 0, info: 0, fixed: 0 };
+    for (const rule in R.counts) summary[RULES[rule][0]] += R.counts[rule];
+    summary.fixed = R.issues.filter(i => i.fixedTo !== null).length;
+    result.summary = summary;
+    result.stats = result.stats || { rows: 0, products: 0, variants: 0, images: 0 };
+    result.fixedRows = header.length ? [header].concat(rows) : [];
+    result.fixedCsv = header.length ? serializeCSV(result.fixedRows) : '';
+    return result;
+  }
+
+  function issuesToCsv(issues) {
+    const rows = [['severity', 'rule', 'row', 'column', 'value', 'message', 'fixed_to']];
+    for (const i of issues) rows.push([i.severity, i.rule, i.row == null ? '' : i.row, i.column || '', i.value, i.message, i.fixedTo == null ? '' : i.fixedTo]);
+    return serializeCSV(rows);
+  }
+
+
+  const api = { VERSION, RULES, decodeBytes, detectDelimiter, parseCSV, serializeCSV, slugify, parseMoney, parseWeightToGrams, mapHeader, checkShopifyCSV, issuesToCsv };
+  if (typeof paid !== 'undefined') Object.assign(api, paid);
+  return api;
+});
+
+</script>
+<script>
+(function(){
+'use strict';
+const P = window.CSVPreflight;
+const BUY = 'https://ceoyur.gumroad.com/l/csv-preflight?utm_source=github&utm_medium=lite&utm_campaign=csv_preflight';
+document.getElementById('ver').textContent = P.VERSION;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SEV = {error:0, warning:1, info:2}, SEVCLS = {error:'e', warning:'w', info:'i'}, SEVLBL = {error:'Must fix', warning:'Check', info:'Can be cleaned'};
+
+const d = $('drop'), inp = $('file');
+d.addEventListener('click', () => inp.click());
+d.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inp.click(); } });
+d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+d.addEventListener('dragleave', () => d.classList.remove('over'));
+d.addEventListener('drop', e => { e.preventDefault(); d.classList.remove('over'); if (e.dataTransfer.files[0]) run(e.dataTransfer.files[0]); });
+inp.addEventListener('change', () => { if (inp.files[0]) run(inp.files[0]); inp.value = ''; });
+
+function run(file){
+  $('out').innerHTML = '<div class="card">Checking ' + esc(file.name) + '…</div>';
+  file.arrayBuffer().then(buf => {
+    const dec = P.decodeBytes(new Uint8Array(buf));
+    render(P.checkShopifyCSV(dec.text, {encoding: dec.encoding}), file.name);
+  }).catch(err => { $('out').innerHTML = '<div class="card e">Could not read this file: ' + esc(err.message) + '</div>'; });
+}
+
+function render(res, name){
+  const s = res.summary, st = res.stats;
+  const fixable = res.issues.filter(i => i.fixedTo != null).length;
+  const rules = Object.keys(res.counts).sort((a,b) => SEV[P.RULES[a][0]] - SEV[P.RULES[b][0]] || res.counts[b] - res.counts[a]);
+  let h = '<div class="card"><h2 style="margin-top:0">' + esc(name) + '</h2><div class="stats">'
+    + '<div class="stat"><b class="e">' + s.error + '</b>must fix</div>'
+    + '<div class="stat"><b class="w">' + s.warning + '</b>to check</div>'
+    + '<div class="stat"><b>' + st.products + '</b>products</div>'
+    + '<div class="stat"><b>' + st.variants + '</b>variants</div>'
+    + '<div class="stat"><b>' + st.rows + '</b>rows</div></div>';
+  if (s.error === 0 && s.warning === 0) h += '<p class="ok">No problems found. This file looks ready to import.</p>';
+  if (fixable) h += '<div class="cta"><div><b>' + fixable + ' of these can be fixed automatically.</b><br><span class="muted">The full version fixes them and gives you a clean file in one click.</span></div><a class="btn" href="' + BUY + '" rel="noopener">Fix them — $19</a></div>';
+  h += '</div>';
+  if (rules.length){
+    h += '<div class="card">';
+    for (const r of rules){
+      const [sev, msg] = P.RULES[r];
+      const list = res.issues.filter(i => i.rule === r);
+      h += '<details' + (sev === 'error' ? ' open' : '') + '><summary><span class="badge ' + SEVCLS[sev] + '">' + SEVLBL[sev] + '</span><span>' + esc(msg) + '</span><span class="badge">' + res.counts[r] + '</span></summary>';
+      h += '<div class="tbl"><table><tr><th>Row</th><th>Column</th><th>Value</th><th>Note</th></tr>';
+      for (const i of list.slice(0, 100)) {
+        const note = i.message !== msg ? i.message.slice(msg.length).replace(/^ \(|\)$/g, '') : '';
+        h += '<tr><td>' + esc(i.row == null ? '—' : i.row) + '</td><td>' + esc(i.column || '') + '</td><td>' + esc(String(i.value).slice(0, 200)) + '</td><td>' + esc(note) + '</td></tr>';
+      }
+      if (res.counts[r] > 100) h += '<tr><td colspan="4" class="muted">…and ' + (res.counts[r] - 100) + ' more</td></tr>';
+      h += '</table></div></details>';
+    }
+    h += '</div>';
+  }
+  $('out').innerHTML = h;
+}
+})();
+</script>
+</body>
+</html>
